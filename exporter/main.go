@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"log"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +13,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+// --------------------- Metrics Definitions ---------------------
 
 // Player-level metrics
 var (
@@ -105,16 +109,36 @@ func init() {
 	prometheus.MustRegister(scrapeSuccess, scrapeDuration)
 }
 
+// --------------------- Scraper Logic ---------------------
+
 func scrapeFBref() {
 	start := time.Now()
 	defer func() { scrapeDuration.Set(time.Since(start).Seconds()) }()
 
 	log.Println("[INFO] Starting FBref Premier League scrape...")
 
+	// Try up to 3 attempts with backoff
+	var resp *http.Response
+	var err error
 	client := &http.Client{Timeout: 25 * time.Second}
-	resp, err := client.Get("https://fbref.com/en/comps/9/Premier-League-Stats")
+
+	for attempt := 1; attempt <= 3; attempt++ {
+		req, _ := http.NewRequest("GET", "https://fbref.com/en/comps/9/Premier-League-Stats", nil)
+		req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Go-FBRef-Scraper/1.0; +https://github.com/yourrepo)")
+
+		resp, err = client.Do(req)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			break
+		}
+
+		if attempt < 3 {
+			log.Printf("[WARN] Attempt %d failed (%v). Retrying...", attempt, err)
+			time.Sleep(time.Duration(attempt) * 2 * time.Second)
+		}
+	}
+
 	if err != nil {
-		log.Printf("[ERROR] Request failed: %v", err)
+		log.Printf("[ERROR] Request failed after retries: %v", err)
 		scrapeSuccess.Set(0)
 		return
 	}
@@ -222,6 +246,8 @@ func scrapeFBref() {
 	scrapeSuccess.Set(1)
 }
 
+// --------------------- Exporter Start ---------------------
+
 func startScraping() {
 	scrapeFBref()
 	ticker := time.NewTicker(1 * time.Hour)
@@ -233,12 +259,20 @@ func startScraping() {
 }
 
 func main() {
-	log.Println("[INFO] Starting Premier League metrics exporter on :2112")
+	const addr = ":2112"
+
+	// Check if port is already in use
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("[FATAL] Port %s already in use: %v", addr, err)
+	}
+	l.Close()
+
+	log.Printf("[INFO] Starting Premier League metrics exporter on %s", addr)
 	startScraping()
 
 	http.Handle("/metrics", promhttp.Handler())
-
-	if err := http.ListenAndServe(":2112", nil); err != nil {
+	if err := http.ListenAndServe(addr, nil); !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("[FATAL] HTTP server failed: %v", err)
 	}
 }
