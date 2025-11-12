@@ -121,32 +121,25 @@ func scrapeFBref() {
 	var resp *http.Response
 	var err error
 
+	// Retry with browser-like User-Agent
 	for attempt := 1; attempt <= 3; attempt++ {
 		req, _ := http.NewRequest("GET", "https://fbref.com/en/comps/9/Premier-League-Stats", nil)
-		// Browser-like User-Agent to avoid 403
 		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36")
 
 		resp, err = client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			break
 		}
-
 		log.Printf("[WARN] Attempt %d failed (%v). Retrying...", attempt, err)
 		time.Sleep(time.Duration(attempt*2) * time.Second)
 	}
 
-	if err != nil {
-		log.Printf("[ERROR] Request failed after retries: %v", err)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		log.Printf("[ERROR] Failed to fetch FBref: %v (status %d)", err, resp.StatusCode)
 		scrapeSuccess.Set(0)
 		return
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("[ERROR] Non-200 HTTP response: %d", resp.StatusCode)
-		scrapeSuccess.Set(0)
-		return
-	}
 
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
@@ -155,7 +148,7 @@ func scrapeFBref() {
 		return
 	}
 
-	// Reset metrics
+	// Reset all metrics
 	topScorer.Reset()
 	topAssists.Reset()
 	cleanSheets.Reset()
@@ -168,75 +161,82 @@ func scrapeFBref() {
 
 	playerCount, teamCount, gkCount := 0, 0, 0
 
-	// --- PLAYER STATS ---
-	doc.Find("table#stats_standard_9 tbody tr").Each(func(i int, s *goquery.Selection) {
-		player := strings.TrimSpace(s.Find("td[data-stat='player']").Text())
-		team := strings.TrimSpace(s.Find("td[data-stat='team']").Text())
-		goals := strings.TrimSpace(s.Find("td[data-stat='goals']").Text())
-		assists := strings.TrimSpace(s.Find("td[data-stat='assists']").Text())
+	// Loop through all tables
+	doc.Find("table").Each(func(i int, table *goquery.Selection) {
+		// --- PLAYER STATS ---
+		if table.Find("th[data-stat='player']").Length() > 0 && table.Find("td[data-stat='goals']").Length() > 0 {
+			table.Find("tbody tr").Each(func(_ int, s *goquery.Selection) {
+				player := strings.TrimSpace(s.Find("td[data-stat='player']").Text())
+				team := strings.TrimSpace(s.Find("td[data-stat='team']").Text())
+				goals := strings.TrimSpace(s.Find("td[data-stat='goals']").Text())
+				assists := strings.TrimSpace(s.Find("td[data-stat='assists']").Text())
 
-		if player == "" || team == "" {
-			return
-		}
+				if player == "" || team == "" {
+					return
+				}
 
-		if g, err := strconv.ParseFloat(goals, 64); err == nil {
-			topScorer.WithLabelValues(player, team).Set(g)
-		}
-		if a, err := strconv.ParseFloat(assists, 64); err == nil {
-			topAssists.WithLabelValues(player, team).Set(a)
-		}
-		playerCount++
-	})
-
-	// --- TEAM STATS ---
-	doc.Find("table#results2024-202591_overall tbody tr").Each(func(i int, s *goquery.Selection) {
-		team := strings.TrimSpace(s.Find("th[data-stat='team']").Text())
-		if team == "" {
-			return
+				if g, err := strconv.ParseFloat(goals, 64); err == nil {
+					topScorer.WithLabelValues(player, team).Set(g)
+				}
+				if a, err := strconv.ParseFloat(assists, 64); err == nil {
+					topAssists.WithLabelValues(player, team).Set(a)
+				}
+				playerCount++
+			})
 		}
 
-		points := strings.TrimSpace(s.Find("td[data-stat='points']").Text())
-		goalsFor := strings.TrimSpace(s.Find("td[data-stat='goals_for']").Text())
-		goalsAgainst := strings.TrimSpace(s.Find("td[data-stat='goals_against']").Text())
-		wins := strings.TrimSpace(s.Find("td[data-stat='wins']").Text())
-		draws := strings.TrimSpace(s.Find("td[data-stat='draws']").Text())
-		losses := strings.TrimSpace(s.Find("td[data-stat='losses']").Text())
+		// --- TEAM STATS ---
+		if table.Find("th[data-stat='team']").Length() > 0 && table.Find("td[data-stat='points']").Length() > 0 {
+			table.Find("tbody tr").Each(func(_ int, s *goquery.Selection) {
+				team := strings.TrimSpace(s.Find("th[data-stat='team']").Text())
+				if team == "" {
+					return
+				}
 
-		if p, err := strconv.ParseFloat(points, 64); err == nil {
-			teamPoints.WithLabelValues(team).Set(p)
-		}
-		if gf, err := strconv.ParseFloat(goalsFor, 64); err == nil {
-			teamGoalsFor.WithLabelValues(team).Set(gf)
-		}
-		if ga, err := strconv.ParseFloat(goalsAgainst, 64); err == nil {
-			teamGoalsAgainst.WithLabelValues(team).Set(ga)
-		}
-		if w, err := strconv.ParseFloat(wins, 64); err == nil {
-			teamWins.WithLabelValues(team).Set(w)
-		}
-		if d, err := strconv.ParseFloat(draws, 64); err == nil {
-			teamDraws.WithLabelValues(team).Set(d)
-		}
-		if l, err := strconv.ParseFloat(losses, 64); err == nil {
-			teamLosses.WithLabelValues(team).Set(l)
+				points := strings.TrimSpace(s.Find("td[data-stat='points']").Text())
+				goalsFor := strings.TrimSpace(s.Find("td[data-stat='goals_for']").Text())
+				goalsAgainst := strings.TrimSpace(s.Find("td[data-stat='goals_against']").Text())
+				wins := strings.TrimSpace(s.Find("td[data-stat='wins']").Text())
+				draws := strings.TrimSpace(s.Find("td[data-stat='draws']").Text())
+				losses := strings.TrimSpace(s.Find("td[data-stat='losses']").Text())
+
+				if p, err := strconv.ParseFloat(points, 64); err == nil {
+					teamPoints.WithLabelValues(team).Set(p)
+				}
+				if gf, err := strconv.ParseFloat(goalsFor, 64); err == nil {
+					teamGoalsFor.WithLabelValues(team).Set(gf)
+				}
+				if ga, err := strconv.ParseFloat(goalsAgainst, 64); err == nil {
+					teamGoalsAgainst.WithLabelValues(team).Set(ga)
+				}
+				if w, err := strconv.ParseFloat(wins, 64); err == nil {
+					teamWins.WithLabelValues(team).Set(w)
+				}
+				if d, err := strconv.ParseFloat(draws, 64); err == nil {
+					teamDraws.WithLabelValues(team).Set(d)
+				}
+				if l, err := strconv.ParseFloat(losses, 64); err == nil {
+					teamLosses.WithLabelValues(team).Set(l)
+				}
+
+				teamCount++
+			})
 		}
 
-		teamCount++
-	})
-
-	// --- GOALKEEPER CLEAN SHEETS ---
-	doc.Find("table#stats_keeper_9 tbody tr").Each(func(i int, s *goquery.Selection) {
-		player := strings.TrimSpace(s.Find("td[data-stat='player']").Text())
-		team := strings.TrimSpace(s.Find("td[data-stat='team']").Text())
-		cs := strings.TrimSpace(s.Find("td[data-stat='clean_sheets']").Text())
-
-		if player == "" || team == "" || cs == "" {
-			return
-		}
-
-		if c, err := strconv.ParseFloat(cs, 64); err == nil {
-			cleanSheets.WithLabelValues(player, team).Set(c)
-			gkCount++
+		// --- GOALKEEPER CLEAN SHEETS ---
+		if table.Find("th[data-stat='player']").Length() > 0 && table.Find("td[data-stat='clean_sheets']").Length() > 0 {
+			table.Find("tbody tr").Each(func(_ int, s *goquery.Selection) {
+				player := strings.TrimSpace(s.Find("td[data-stat='player']").Text())
+				team := strings.TrimSpace(s.Find("td[data-stat='team']").Text())
+				cs := strings.TrimSpace(s.Find("td[data-stat='clean_sheets']").Text())
+				if player == "" || team == "" || cs == "" {
+					return
+				}
+				if c, err := strconv.ParseFloat(cs, 64); err == nil {
+					cleanSheets.WithLabelValues(player, team).Set(c)
+					gkCount++
+				}
+			})
 		}
 	})
 
@@ -247,7 +247,7 @@ func scrapeFBref() {
 // --------------------- Exporter Start ---------------------
 
 func startScraping() {
-	scrapeFBref()
+	scrapeFBref() // initial run
 	ticker := time.NewTicker(1 * time.Hour)
 	go func() {
 		for range ticker.C {
@@ -257,9 +257,9 @@ func startScraping() {
 }
 
 func main() {
-	const addr = ":2113"
+	const addr = ":2112"
 
-	// Check if port is already in use
+	// Ensure port is free
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Fatalf("[FATAL] Port %s already in use: %v", addr, err)
