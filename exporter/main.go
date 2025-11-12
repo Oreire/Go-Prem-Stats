@@ -257,7 +257,7 @@ func startScraping() {
 }
 
 func main() {
-	const addr = ":2112"
+	const addr = ":2113"
 
 	// Ensure port is free
 	l, err := net.Listen("tcp", addr)

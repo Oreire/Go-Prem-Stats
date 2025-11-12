@@ -2,46 +2,55 @@
 
 services:
   exporter:
-    build: ./exporter
+    build:
+      context: ./exporter
+      dockerfile: Dockerfile
     ports:
-      - "2113:2113"
+      - "2113:2113"   # Standard Prometheus metrics port for consistency
     restart: always
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:2113/metrics"]
+      test: ["CMD-SHELL", "curl -f http://localhost:2113/metrics || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 10s
 
   prometheus:
-    build: ./prometheus
+    build:
+      context: ./prometheus
+      dockerfile: Dockerfile
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     restart: always
     healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:9090/-/ready"]
+      test: ["CMD-SHELL", "wget --spider http://localhost:9090/-/ready || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 10s
 
   grafana:
-    build: ./grafana
+    build:
+      context: ./grafana
+      dockerfile: Dockerfile
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
     volumes:
       - grafana_data:/var/lib/grafana
     restart: always
     depends_on:
       - prometheus
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/login"]
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/login || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 10s
 
 volumes:
   grafana_data:
