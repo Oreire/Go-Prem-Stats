@@ -4,10 +4,10 @@ services:
   exporter:
     build: ./exporter
     ports:
-      - "2112:2112"
+      - "2113:2113"
     restart: always
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:2112/metrics"]
+      test: ["CMD", "curl", "-f", "http://localhost:2113/metrics"]
       interval: 30s
       timeout: 10s
       retries: 3

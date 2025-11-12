@@ -117,24 +117,22 @@ func scrapeFBref() {
 
 	log.Println("[INFO] Starting FBref Premier League scrape...")
 
-	// Try up to 3 attempts with backoff
+	client := &http.Client{Timeout: 25 * time.Second}
 	var resp *http.Response
 	var err error
-	client := &http.Client{Timeout: 25 * time.Second}
 
 	for attempt := 1; attempt <= 3; attempt++ {
 		req, _ := http.NewRequest("GET", "https://fbref.com/en/comps/9/Premier-League-Stats", nil)
-		req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Go-FBRef-Scraper/1.0; +https://github.com/yourrepo)")
+		// Browser-like User-Agent to avoid 403
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36")
 
 		resp, err = client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			break
 		}
 
-		if attempt < 3 {
-			log.Printf("[WARN] Attempt %d failed (%v). Retrying...", attempt, err)
-			time.Sleep(time.Duration(attempt) * 2 * time.Second)
-		}
+		log.Printf("[WARN] Attempt %d failed (%v). Retrying...", attempt, err)
+		time.Sleep(time.Duration(attempt*2) * time.Second)
 	}
 
 	if err != nil {
@@ -157,7 +155,7 @@ func scrapeFBref() {
 		return
 	}
 
-	// Reset metrics before new scrape
+	// Reset metrics
 	topScorer.Reset()
 	topAssists.Reset()
 	cleanSheets.Reset()
@@ -259,7 +257,7 @@ func startScraping() {
 }
 
 func main() {
-	const addr = ":2112"
+	const addr = ":2113"
 
 	// Check if port is already in use
 	l, err := net.Listen("tcp", addr)

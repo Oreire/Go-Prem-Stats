@@ -21,7 +21,7 @@ RUN apk --no-cache add ca-certificates
 # Copy the static binary from the builder stage
 COPY --from=builder /app/fbref_exporter /fbref_exporter
 
-EXPOSE 2112
+EXPOSE 2113
 
 # Run the exporter
 ENTRYPOINT ["/fbref_exporter"]
