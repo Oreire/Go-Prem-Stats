@@ -1,0 +1,43 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Premier League Metrics",
+    "panels": [
+      {
+        "type": "table",
+        "title": "Top Scorers",
+        "targets": [
+          {
+            "expr": "premier_league_top_scorer_goals",
+            "format": "table"
+          }
+        ],
+        "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 }
+      },
+      {
+        "type": "table",
+        "title": "Top Assists",
+        "targets": [
+          {
+            "expr": "premier_league_top_assists",
+            "format": "table"
+          }
+        ],
+        "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 }
+      },
+      {
+        "type": "table",
+        "title": "Clean Sheets",
+        "targets": [
+          {
+            "expr": "premier_league_clean_sheets",
+            "format": "table"
+          }
+        ],
+        "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 }
+      }
+    ],
+    "schemaVersion": 36,
+    "version": 1
+  }
+}

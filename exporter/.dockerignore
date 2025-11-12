@@ -1,0 +1,6 @@
+
+*.log
+*.md
+vendor/
+.git/
+.gitignore

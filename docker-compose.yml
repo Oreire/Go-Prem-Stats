@@ -1,0 +1,49 @@
+# version: '3.8'
+
+services:
+  exporter:
+    build: ./exporter
+    ports:
+      - "2112:2112"
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2112/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  prometheus:
+    build: ./prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:9090/-/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  grafana:
+    build: ./grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: always
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  grafana_data:
+
+# Prometheus configuration file: prometheus/prometheus.yml
