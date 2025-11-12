@@ -21,11 +21,17 @@ var (
 		},
 		[]string{"player", "team"},
 	)
-
 	topAssists = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "premier_league_player_assists",
 			Help: "Assists made by each Premier League player",
+		},
+		[]string{"player", "team"},
+	)
+	cleanSheets = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "premier_league_goalkeeper_clean_sheets",
+			Help: "Number of clean sheets by each goalkeeper",
 		},
 		[]string{"player", "team"},
 	)
@@ -94,8 +100,7 @@ var (
 )
 
 func init() {
-	// Register all metrics
-	prometheus.MustRegister(topScorer, topAssists)
+	prometheus.MustRegister(topScorer, topAssists, cleanSheets)
 	prometheus.MustRegister(teamPoints, teamGoalsFor, teamGoalsAgainst, teamWins, teamDraws, teamLosses)
 	prometheus.MustRegister(scrapeSuccess, scrapeDuration)
 }
@@ -128,9 +133,10 @@ func scrapeFBref() {
 		return
 	}
 
-	// Reset all metrics before updating
+	// Reset metrics before new scrape
 	topScorer.Reset()
 	topAssists.Reset()
+	cleanSheets.Reset()
 	teamPoints.Reset()
 	teamGoalsFor.Reset()
 	teamGoalsAgainst.Reset()
@@ -138,9 +144,9 @@ func scrapeFBref() {
 	teamDraws.Reset()
 	teamLosses.Reset()
 
-	playerCount, teamCount := 0, 0
+	playerCount, teamCount, gkCount := 0, 0, 0
 
-	// --- PLAYER STATS TABLE ---
+	// --- PLAYER STATS ---
 	doc.Find("table#stats_standard_9 tbody tr").Each(func(i int, s *goquery.Selection) {
 		player := strings.TrimSpace(s.Find("td[data-stat='player']").Text())
 		team := strings.TrimSpace(s.Find("td[data-stat='team']").Text())
@@ -160,7 +166,7 @@ func scrapeFBref() {
 		playerCount++
 	})
 
-	// --- TEAM STANDINGS TABLE ---
+	// --- TEAM STATS ---
 	doc.Find("table#results2024-202591_overall tbody tr").Each(func(i int, s *goquery.Selection) {
 		team := strings.TrimSpace(s.Find("th[data-stat='team']").Text())
 		if team == "" {
@@ -196,13 +202,28 @@ func scrapeFBref() {
 		teamCount++
 	})
 
-	log.Printf("[INFO] Successfully scraped %d players across %d teams", playerCount, teamCount)
+	// --- GOALKEEPER CLEAN SHEETS ---
+	doc.Find("table#stats_keeper_9 tbody tr").Each(func(i int, s *goquery.Selection) {
+		player := strings.TrimSpace(s.Find("td[data-stat='player']").Text())
+		team := strings.TrimSpace(s.Find("td[data-stat='team']").Text())
+		cs := strings.TrimSpace(s.Find("td[data-stat='clean_sheets']").Text())
+
+		if player == "" || team == "" || cs == "" {
+			return
+		}
+
+		if c, err := strconv.ParseFloat(cs, 64); err == nil {
+			cleanSheets.WithLabelValues(player, team).Set(c)
+			gkCount++
+		}
+	})
+
+	log.Printf("[INFO] Scraped %d players, %d teams, %d goalkeepers", playerCount, teamCount, gkCount)
 	scrapeSuccess.Set(1)
 }
 
 func startScraping() {
-	scrapeFBref() // Run immediately
-
+	scrapeFBref()
 	ticker := time.NewTicker(1 * time.Hour)
 	go func() {
 		for range ticker.C {
