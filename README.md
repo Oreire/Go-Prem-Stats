@@ -83,6 +83,3 @@ You should see output like:
 premier_league_top_scorer_goals{player="Erling Haaland",team="Manchester City"} 27
 ```
 
----
-
-Would you like me to show you how to add these library installs automatically in a `Makefile` or setup script (so your teammates or CI/CD pipelines can run it easily)?
