@@ -12,30 +12,79 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// Player-level metrics
 var (
 	topScorer = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "premier_league_top_scorer_goals",
-			Help: "Goals scored by Premier League players",
+			Name: "premier_league_player_goals",
+			Help: "Goals scored by each Premier League player",
 		},
 		[]string{"player", "team"},
 	)
 
 	topAssists = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "premier_league_top_assists",
-			Help: "Assists made by Premier League players",
+			Name: "premier_league_player_assists",
+			Help: "Assists made by each Premier League player",
 		},
 		[]string{"player", "team"},
 	)
+)
 
+// Team-level metrics
+var (
+	teamPoints = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "premier_league_team_points",
+			Help: "Current Premier League points per team",
+		},
+		[]string{"team"},
+	)
+	teamGoalsFor = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "premier_league_team_goals_for",
+			Help: "Total goals scored per team",
+		},
+		[]string{"team"},
+	)
+	teamGoalsAgainst = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "premier_league_team_goals_against",
+			Help: "Total goals conceded per team",
+		},
+		[]string{"team"},
+	)
+	teamWins = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "premier_league_team_wins",
+			Help: "Total wins per team",
+		},
+		[]string{"team"},
+	)
+	teamDraws = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "premier_league_team_draws",
+			Help: "Total draws per team",
+		},
+		[]string{"team"},
+	)
+	teamLosses = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "premier_league_team_losses",
+			Help: "Total losses per team",
+		},
+		[]string{"team"},
+	)
+)
+
+// Exporter health metrics
+var (
 	scrapeSuccess = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "fbref_scrape_success",
-			Help: "Whether the last scrape of fbref.com succeeded (1 = success, 0 = fail)",
+			Help: "Whether the last scrape succeeded (1=success, 0=failure)",
 		},
 	)
-
 	scrapeDuration = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "fbref_scrape_duration_seconds",
@@ -45,49 +94,53 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(topScorer)
-	prometheus.MustRegister(topAssists)
-	prometheus.MustRegister(scrapeSuccess)
-	prometheus.MustRegister(scrapeDuration)
+	// Register all metrics
+	prometheus.MustRegister(topScorer, topAssists)
+	prometheus.MustRegister(teamPoints, teamGoalsFor, teamGoalsAgainst, teamWins, teamDraws, teamLosses)
+	prometheus.MustRegister(scrapeSuccess, scrapeDuration)
 }
 
 func scrapeFBref() {
 	start := time.Now()
-	defer func() {
-		scrapeDuration.Set(time.Since(start).Seconds())
-	}()
+	defer func() { scrapeDuration.Set(time.Since(start).Seconds()) }()
 
-	log.Println("[INFO] Starting scrape of FBref Premier League stats")
+	log.Println("[INFO] Starting FBref Premier League scrape...")
 
-	client := &http.Client{Timeout: 20 * time.Second}
+	client := &http.Client{Timeout: 25 * time.Second}
 	resp, err := client.Get("https://fbref.com/en/comps/9/Premier-League-Stats")
 	if err != nil {
-		log.Printf("[ERROR] HTTP request failed: %v", err)
+		log.Printf("[ERROR] Request failed: %v", err)
 		scrapeSuccess.Set(0)
 		return
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		log.Printf("[ERROR] Received non-200 status: %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("[ERROR] Non-200 HTTP response: %d", resp.StatusCode)
 		scrapeSuccess.Set(0)
 		return
 	}
 
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
-		log.Printf("[ERROR] Failed to parse document: %v", err)
+		log.Printf("[ERROR] Parsing HTML failed: %v", err)
 		scrapeSuccess.Set(0)
 		return
 	}
 
-	// Reset metrics to avoid stale labels
+	// Reset all metrics before updating
 	topScorer.Reset()
 	topAssists.Reset()
+	teamPoints.Reset()
+	teamGoalsFor.Reset()
+	teamGoalsAgainst.Reset()
+	teamWins.Reset()
+	teamDraws.Reset()
+	teamLosses.Reset()
 
-	rowCount := 0
+	playerCount, teamCount := 0, 0
 
-	// ✅ Corrected selector: table ID is now stats_standard_9
+	// --- PLAYER STATS TABLE ---
 	doc.Find("table#stats_standard_9 tbody tr").Each(func(i int, s *goquery.Selection) {
 		player := strings.TrimSpace(s.Find("td[data-stat='player']").Text())
 		team := strings.TrimSpace(s.Find("td[data-stat='team']").Text())
@@ -104,19 +157,52 @@ func scrapeFBref() {
 		if a, err := strconv.ParseFloat(assists, 64); err == nil {
 			topAssists.WithLabelValues(player, team).Set(a)
 		}
-
-		rowCount++
+		playerCount++
 	})
 
-	log.Printf("[INFO] Successfully scraped %d player rows", rowCount)
+	// --- TEAM STANDINGS TABLE ---
+	doc.Find("table#results2024-202591_overall tbody tr").Each(func(i int, s *goquery.Selection) {
+		team := strings.TrimSpace(s.Find("th[data-stat='team']").Text())
+		if team == "" {
+			return
+		}
+
+		points := strings.TrimSpace(s.Find("td[data-stat='points']").Text())
+		goalsFor := strings.TrimSpace(s.Find("td[data-stat='goals_for']").Text())
+		goalsAgainst := strings.TrimSpace(s.Find("td[data-stat='goals_against']").Text())
+		wins := strings.TrimSpace(s.Find("td[data-stat='wins']").Text())
+		draws := strings.TrimSpace(s.Find("td[data-stat='draws']").Text())
+		losses := strings.TrimSpace(s.Find("td[data-stat='losses']").Text())
+
+		if p, err := strconv.ParseFloat(points, 64); err == nil {
+			teamPoints.WithLabelValues(team).Set(p)
+		}
+		if gf, err := strconv.ParseFloat(goalsFor, 64); err == nil {
+			teamGoalsFor.WithLabelValues(team).Set(gf)
+		}
+		if ga, err := strconv.ParseFloat(goalsAgainst, 64); err == nil {
+			teamGoalsAgainst.WithLabelValues(team).Set(ga)
+		}
+		if w, err := strconv.ParseFloat(wins, 64); err == nil {
+			teamWins.WithLabelValues(team).Set(w)
+		}
+		if d, err := strconv.ParseFloat(draws, 64); err == nil {
+			teamDraws.WithLabelValues(team).Set(d)
+		}
+		if l, err := strconv.ParseFloat(losses, 64); err == nil {
+			teamLosses.WithLabelValues(team).Set(l)
+		}
+
+		teamCount++
+	})
+
+	log.Printf("[INFO] Successfully scraped %d players across %d teams", playerCount, teamCount)
 	scrapeSuccess.Set(1)
 }
 
 func startScraping() {
-	// Run once immediately
-	scrapeFBref()
+	scrapeFBref() // Run immediately
 
-	// Schedule periodic scraping
 	ticker := time.NewTicker(1 * time.Hour)
 	go func() {
 		for range ticker.C {
@@ -132,6 +218,6 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 
 	if err := http.ListenAndServe(":2112", nil); err != nil {
-		log.Fatalf("[FATAL] Server exited: %v", err)
+		log.Fatalf("[FATAL] HTTP server failed: %v", err)
 	}
 }
