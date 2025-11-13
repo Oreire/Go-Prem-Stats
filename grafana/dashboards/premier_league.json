@@ -1,16 +1,15 @@
 {
   "dashboard": {
     "id": null,
-    "title": "Premier League Metrics",
+    "title": "Premier League Full Metrics",
+    "schemaVersion": 36,
+    "version": 1,
     "panels": [
       {
         "type": "table",
         "title": "Top Scorers",
         "targets": [
-          {
-            "expr": "premier_league_top_scorer_goals",
-            "format": "table"
-          }
+          { "expr": "premier_league_player_goals", "format": "table" }
         ],
         "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 }
       },
@@ -18,10 +17,7 @@
         "type": "table",
         "title": "Top Assists",
         "targets": [
-          {
-            "expr": "premier_league_top_assists",
-            "format": "table"
-          }
+          { "expr": "premier_league_player_assists", "format": "table" }
         ],
         "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 }
       },
@@ -29,15 +25,53 @@
         "type": "table",
         "title": "Clean Sheets",
         "targets": [
-          {
-            "expr": "premier_league_clean_sheets",
-            "format": "table"
-          }
+          { "expr": "premier_league_goalkeeper_clean_sheets", "format": "table" }
         ],
         "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 }
+      },
+      {
+        "type": "table",
+        "title": "Team Points",
+        "targets": [
+          { "expr": "premier_league_team_points", "format": "table" }
+        ],
+        "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 }
+      },
+      {
+        "type": "table",
+        "title": "Goals For / Goals Against",
+        "targets": [
+          { "expr": "premier_league_team_goals_for", "format": "table" },
+          { "expr": "premier_league_team_goals_against", "format": "table" }
+        ],
+        "gridPos": { "x": 0, "y": 32, "w": 12, "h": 8 }
+      },
+      {
+        "type": "table",
+        "title": "Team Wins / Draws / Losses",
+        "targets": [
+          { "expr": "premier_league_team_wins", "format": "table" },
+          { "expr": "premier_league_team_draws", "format": "table" },
+          { "expr": "premier_league_team_losses", "format": "table" }
+        ],
+        "gridPos": { "x": 0, "y": 40, "w": 12, "h": 8 }
+      },
+      {
+        "type": "stat",
+        "title": "Exporter Last Scrape Duration (s)",
+        "targets": [
+          { "expr": "fbref_scrape_duration_seconds", "format": "time_series" }
+        ],
+        "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 }
+      },
+      {
+        "type": "stat",
+        "title": "Exporter Last Scrape Success",
+        "targets": [
+          { "expr": "fbref_scrape_success", "format": "time_series" }
+        ],
+        "gridPos": { "x": 12, "y": 4, "w": 6, "h": 4 }
       }
-    ],
-    "schemaVersion": 36,
-    "version": 1
+    ]
   }
 }

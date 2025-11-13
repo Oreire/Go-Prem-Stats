@@ -375,3 +375,15 @@ func main() {
 
  **include clean sheets (goalkeeper table)** so you can also track defensive performance?
 It’s a 15-line addition on top of this version.
+
+# Ensure Docker Desktop is running
+docker-compose down --volumes
+docker-compose build --no-cache
+docker-compose up -d
+docker-compose ps
+docker-compose logs -f
+
+
+go mod tidy
+go build -o prem-stats-exporter main.go
+./prem-stats-exporter
